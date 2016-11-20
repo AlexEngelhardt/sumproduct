@@ -60,15 +60,20 @@ f_XI.ZI <- function(fam, Z_vectors, p1, alpha){
 ################################################################
 #### Grid search / optim full likelihood functions
 
-L_fam <- function(fam, riskconstellations, p1, alpha){  # un-logged L for one family
+L_fam <- function(fam, riskconstellations, p1, alpha, gridpurging=TRUE){  # un-logged L for one family
     stopifnot(diff(range(fam$FamID))==0)  # Throws an error if you supply more than one family. If so, then subset dat before.
 
+    if(gridpurging==FALSE){
+        riskconstellations <- expand.grid(lapply(fam$position, function(i) 0:1))
+    }
+        
     all_f_XI.ZI <- f_XI.ZI(fam, Z_vectors=riskconstellations, p1, alpha)
+
 
     return(sum(all_f_XI.ZI))
 }
 
-l <- function(dat, p1, alpha, parallel=FALSE){  # logged l over all families
+l <- function(dat, p1, alpha, parallel=FALSE, gridpurging=TRUE){  # logged l over all families
     FamIDs <- unique(dat$FamID)
 
     if(!parallel){
@@ -78,7 +83,7 @@ l <- function(dat, p1, alpha, parallel=FALSE){  # logged l over all families
     }
 
     likes <- my.apply(FamIDs, function(fam){
-        L_fam(dat[dat$FamID==fam,], attr(dat, "possible_Z_vectors_list")[[as.character(fam)]], p1, alpha)
+        L_fam(dat[dat$FamID==fam,], attr(dat, "possible_Z_vectors_list")[[as.character(fam)]], p1, alpha, gridpurging=gridpurging)
     }) %>% unlist()
     loglikes <- log(likes)
     loglike <- sum(loglikes)
@@ -95,7 +100,7 @@ run_optim <- function(dat, parallel=FALSE, theta_0=list(p1=0.2, alpha=4)){
     trace_ <- 0  # level of verbose during optim run
 
     elapsed <- system.time({
-        opt <- optim(par=c(logit(theta_0$p1), theta_0$alpha), function(pars) l(dat, invlogit(pars[1]), pars[2], parallel=parallel),
+        opt <- optim(par=c(logit(theta_0$p1), theta_0$alpha), function(pars) l(dat, invlogit(pars[1]), pars[2], parallel=parallel, gridpurging=FALSE),
                      control=list(REPORT=1, trace=trace_, fnscale=-1))
     })
     attr(opt, "elapsed") <- elapsed

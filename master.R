@@ -11,7 +11,7 @@ dat <-  preprocess(raw_dat, impute=TRUE, pH=pH, compute_PZL=TRUE)
 
 #### Or load a previously preprocessed data set:
 dat <- readRDS("data/01_dat_imputedparents.rds")  # real data
-dat <- readRDS("data/simfam_100_3.rds")           # simulated data
+dat <- readRDS("data/simfam_100_3.rds")           # simulated data: 100 families with 3 generations
 
 
 ################################################################
@@ -249,6 +249,55 @@ ggsave("data/runtime_comparison_results.pdf")
 
 
 ################################################################
+#### Plot the likelihood surface
+
+p1s <- seq(0.05, 0.95, by=0.05)
+alphas <- seq(2, 8, by=0.5)
+
+likelihood_surface <- function(dat, p1s, alphas){
+    surface <- expand.grid(p1=p1s, alpha=alphas)
+    surface$l <- mclapply(1:nrow(surface), function(row){
+        l(dat, p1=surface[row, "p1"], alpha=surface[row, "alpha"])
+    }) %>% unlist()
+    z <- matrix(surface$l, nrow=length(p1s), ncol=length(alphas))
+    return(z)
+}
+
+contours <- list()
+
+raw_dat <- simulate_dataset(n_familys=100, n_generations=3, p1, alpha, pH, n_lastgen=3, seed=20160921)
+dat <-  preprocess(raw_dat, impute=TRUE, pH=pH, compute_PZL=TRUE)
+contours$z1 <- likelihood_surface(dat, p1s, alphas)
+
+raw_dat <- simulate_dataset(n_familys=1000, n_generations=3, p1, alpha, pH, n_lastgen=3, seed=20160921)
+dat <-  preprocess(raw_dat, impute=TRUE, pH=pH, compute_PZL=TRUE)
+contours$z2 <- likelihood_surface(dat, p1s, alphas)
+
+raw_dat <- simulate_dataset(n_familys=100, n_generations=4, p1, alpha, pH, n_lastgen=3, seed=20160921)
+dat <-  preprocess(raw_dat, impute=TRUE, pH=pH, compute_PZL=TRUE)
+contours$z3 <- likelihood_surface(dat, p1s, alphas)
+
+dat <- readRDS("data/01_dat_imputedparents.rds")
+contours$z4 <- likelihood_surface(dat, p1s, alphas)
+
+saveRDS(contours, file="data/contours.rds")
+
+contours <- readRDS("data/contours.rds")
+
+pdf("data/contours.pdf")
+layout(matrix(1:4, byrow=T, nrow=2))
+par(oma=c(0,0,0,0), mar=c(4,4,2,1))
+idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z1), 512))))))  # hack to show nicely spaced contour lines
+contour(x=p1s, y=alphas, z=contours$z1, levels=rev(pretty(range(contours$z1), 512))[idx], main="(a) 100 families of 3 generations", xlab="p1", ylab="alpha")
+idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z2), 512))))))
+contour(x=p1s, y=alphas, z=contours$z2, levels=rev(pretty(range(contours$z2), 1024))[idx], main="(b) 1000 families of 3 generations", xlab="p1", ylab="alpha")
+idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z3), 512))))))
+contour(x=p1s, y=alphas, z=contours$z3, levels=rev(pretty(range(contours$z3), 512))[idx], main="(c) 100 families of 4 generations", xlab="p1", ylab="alpha")
+idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z4), 512))))))
+contour(x=p1s, y=alphas, z=contours$z4, levels=rev(pretty(range(contours$z4), 512))[idx], main="(d) real data", xlab="p1", ylab="alpha")
+dev.off()
+
+################################################################
 ################################################################
 ################################################################
 ################################################################
@@ -257,11 +306,18 @@ ggsave("data/runtime_comparison_results.pdf")
 
 ################################################################
 #### Compute p_riskfam via E_SPA_onefam
+####  and plot ROC curves for simulated data
+
+## used N=1000, p1=0.2, alpha=4, seed=20160921, n_generations=3, n_lastgen=3
 
 ## compute: 1 - P(Z_I = 0 | X_I)
 ## only founders is enough. nonfounders come deterministically
 
-theta_hat <- list(p1=invlogit(opt_realdata$par[1]), alpha=opt_realdata$par[2])
+## opt <- run_optim(dat, parallel=FALSE)
+## saveRDS(opt, file="data/opt_simdata.rds")
+opt <- readRDS("data/opt_simdata.rds")
+
+theta_hat <- list(p1=invlogit(opt$par[1]), alpha=opt$par[2])
 dat$T1hat <- E_SPA(dat, theta_t=theta_hat)  # compute T1 per sum-product algorithm
 
 P_riskfam <- rep(NA, length(unique(dat$FamID)))
@@ -282,7 +338,9 @@ boxplot(P_riskfam ~ true_riskfam, main="P(riskfam) vs. true riskfam")
 library(ROCR)
 pred <- prediction(P_riskfam, labels=true_riskfam)
 perf <- performance(pred, measure="tpr", x.measure="fpr")
+pdf("data/ROC.pdf")
 plot(perf, main=paste("ROC curve for P(riskfam)\nAUC:", round(performance(pred, measure="auc")@y.values[[1]], 2))); abline(0,1,lty=2)
+dev.off()
 
 ## you could also use Z-scores instead:
 ## Z_riskfam <- scale(P_riskfam)
