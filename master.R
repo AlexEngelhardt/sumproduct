@@ -172,6 +172,78 @@ dev.off()
 
 Ns <- seq(10, 100, by=10)
 
+Ds <- c(5, 9, 15, 17, 19)  # WARNING: This is manually set to be the same as the simulated families below.
+## Simulate max-size families once. Then just subset for smaller N
+
+all_raw_dat <- list()
+set.seed(20161121)
+all_raw_dat[["D5"]] <- simulate_dataset(n_familys=max(Ns), n_generations=2, p1, alpha, pH, n_lastgen=3)
+all_raw_dat[["D9"]] <- simulate_dataset(n_familys=max(Ns), n_generations=3, p1, alpha, pH, n_lastgen=3)
+all_raw_dat[["D15"]] <- simulate_dataset(n_familys=max(Ns), n_generations=4, p1, alpha, pH, n_lastgen=1)
+
+raw_dat_5gen <- simulate_dataset(n_familys=max(Ns), n_generations=5, p1, alpha, pH, n_lastgen=1)
+
+kill_founders <- 1:14  # simulate 17 persons by killing 14 founder off a 5 generation (31 persons) pedigree
+raw_dat <- raw_dat_5gen
+raw_dat <- raw_dat[-which(raw_dat$pos %in% kill_founders), ]
+new_founders <- raw_dat$father_pos %in% kill_founders
+raw_dat[new_founders, "father_pos"] <- NA
+raw_dat[new_founders, "mother_pos"] <- NA
+raw_dat[new_founders, "founder"] <- TRUE
+all_raw_dat[["D17"]] <- raw_dat
+    
+kill_founders <- 1:12
+raw_dat <- raw_dat_5gen
+raw_dat <- raw_dat[-which(raw_dat$pos %in% kill_founders), ]
+new_founders <- raw_dat$father_pos %in% kill_founders
+raw_dat[new_founders, "father_pos"] <- NA
+raw_dat[new_founders, "mother_pos"] <- NA
+raw_dat[new_founders, "founder"] <- TRUE
+all_raw_dat[["D19"]] <- raw_dat
+
+all_dat <- lapply(all_raw_dat, preprocess, impute=TRUE, pH=0.5, compute_PZL=TRUE)
+
+results <- expand.grid(algo=c("optim", "EM"), D=Ds, N=Ns, t=NA)
+theta_0 <- list(p1=.2, alpha=4)
+
+for(D in Ds){
+    print(paste0("* ", format(Sys.time()), ":: Starting D=", D))
+    cat(paste0("* ", format(Sys.time()), ":: Starting D=", D, "\n"), file="log.txt", append=TRUE)
+    for(N in Ns){  # WARNING: Do not mclapply this because it falsifies the elapsed time from system.time
+        
+        print(paste0("** ", format(Sys.time()), ":: Starting N=", N))
+        cat(paste0("** ", format(Sys.time()), ":: Starting N=", N, "\n"), file="log.txt", append=TRUE)
+        dat <- all_dat[[paste0("D", D)]]
+        FamIDs <- unique(dat$FamID)
+        dat <- subset(dat, FamID %in% FamIDs[1:N])
+        attr(dat, "possible_Z_vectors_list") <- attr(all_dat[[paste0("D", D)]], "possible_Z_vectors_list")
+
+        this_EM <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=TRUE)
+        this_opt <- run_optim(dat, parallel=FALSE, theta_0=theta_0, gridpurging=FALSE)  # No grid purging!
+        
+        EM_idx  <- which(results$algo=="EM" & results$D==D & results$N==N)
+        opt_idx <- which(results$algo=="optim" & results$D==D & results$N==N)
+                
+        results[EM_idx, "t"]  <- attr(this_EM,  "elapsed")[3]
+        results[opt_idx, "t"] <- attr(this_opt, "elapsed")[3]
+    }
+    
+}
+
+saveRDS(results, file="data/runtime_comparison_results.rds")
+results <- readRDS(file="data/runtime_comparison_results.rds")
+
+ggplot(results, aes(x=N, y=t, group=D, colour=factor(D))) + geom_line() + geom_point() + facet_grid(~algo) + scale_y_log10()
+
+ggsave("data/runtime_comparison_results.pdf")
+
+################################################################
+################################################################
+################################################################
+#### Old paper Figure 5: where optim still had grid purging
+
+Ns <- seq(10, 100, by=10)
+
 Ds <- c(9, 15, 20, 22, 24)  # WARNING: This is manually set to be the same as the simulated families below.
 ## Simulate max-size families once. Then just subset for smaller N
 
@@ -211,9 +283,7 @@ raw_dat[new_founders, "founder"] <- TRUE
 all_raw_dat[["D24"]] <- raw_dat
 ## end 4.5 generations hack
 
-## The preprocessing takes around 30secs now (was: 10 minutes because of slice imputing of data.frame instead of matrix)
 all_dat <- lapply(all_raw_dat, preprocess, impute=TRUE, pH=0.5, compute_PZL=TRUE)
-
 
 results <- expand.grid(algo=c("optim", "EM"), D=Ds, N=Ns, t=NA)
 theta_0 <- list(p1=.2, alpha=4)

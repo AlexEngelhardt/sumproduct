@@ -47,7 +47,7 @@ simulate_family <- function(FamID, n_generations, p1, alpha, pH, n_lastgen=1){
 
 
     ## Simulate nonfounder generations:
-    if(n_generations > 2){
+    if(n_generations >= 2){
         for(gen in 2:n_generations){
 
             n_thisgen <- 2^(n_generations-gen)

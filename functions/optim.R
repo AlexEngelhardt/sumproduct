@@ -96,11 +96,11 @@ l <- function(dat, p1, alpha, parallel=FALSE, gridpurging=TRUE){  # logged l ove
 logit <- function(p) log(p/(1-p))
 invlogit <- function(x) exp(x) / (1+exp(x))
 
-run_optim <- function(dat, parallel=FALSE, theta_0=list(p1=0.2, alpha=4)){
+run_optim <- function(dat, parallel=FALSE, theta_0=list(p1=0.2, alpha=4), gridpurging=TRUE){
     trace_ <- 0  # level of verbose during optim run
 
     elapsed <- system.time({
-        opt <- optim(par=c(logit(theta_0$p1), theta_0$alpha), function(pars) l(dat, invlogit(pars[1]), pars[2], parallel=parallel, gridpurging=FALSE),
+        opt <- optim(par=c(logit(theta_0$p1), theta_0$alpha), function(pars) l(dat, invlogit(pars[1]), pars[2], parallel=parallel, gridpurging=gridpurging),
                      control=list(REPORT=1, trace=trace_, fnscale=-1))
     })
     attr(opt, "elapsed") <- elapsed
