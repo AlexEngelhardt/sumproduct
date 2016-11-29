@@ -30,19 +30,21 @@ theta_t <- list(p1=0.2, alpha=4)  # starting values
 
 EM_largefam  <- run_EM(fam, convergence_reltol=EM_rel.tol, log_every=10, SPA=TRUE)
 opt_largefam <- run_optim(fam, parallel=FALSE)
-attr(EM_largefam, "elapsed")   # 56sec @fam104 with 23persons
-attr(opt_largefam, "elapsed")  # 240sec
+attr(EM_largefam, "elapsed")   # 59.9sec @fam104 with 23persons
+attr(opt_largefam, "elapsed")  # 372.69sec
 
-attr(EM_largefam, "elapsed") / attr(opt_largefam, "elapsed")
+attr(EM_largefam, "elapsed") / attr(opt_largefam, "elapsed")  # 0.1608
 
 #### Whole real data set
 
 dat <- readRDS("data/01_dat_imputedparents.rds")  # real data
 
-EM_realdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=1, SPA=TRUE)
+EM_realdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=10, SPA=TRUE)
 attr(EM_realdata, "elapsed")   # 6855sec @ rel.tol 5e-04 (but SPA for all (i.e. also <10members) familys)
 opt_realdata <- run_optim(dat, parallel=FALSE)
 attr(opt_realdata, "elapsed")  # 505sec
+
+attr(EM_realdata, "elapsed") / attr(opt_realdata, "elapsed")  # 
 
 ## Estimated aprameters:
 invlogit(opt_realdata$par[1])  # 0.9006657
@@ -111,13 +113,14 @@ p1 <- 0.2
 alpha <- 4
 pH <- 0.5
 
-options(mc.cores=7)
+options(mc.cores=4)
 
 iterations <- 100
-remove_20_percent <- TRUE  # TODO loop over this \in {TRUE,FALSE}
+remove_20_percent <- FALSE  # you could loop over this \in {TRUE,FALSE}
+EM_rel.tol <- 5e-05  # For the Bland-Altman plot, be more strict with EM convergence
 
 results <- as.data.frame(matrix(NA, nrow=iterations, ncol=4, dimnames=list(NULL, c("optim_p1","optim_alpha","optim_p1","optim_alpha"))))
-set.seed(20161003)
+set.seed(20161126)
 
 fig4_res <- mclapply(1:iterations, function(iter){
 
@@ -131,7 +134,7 @@ fig4_res <- mclapply(1:iterations, function(iter){
 
     theta_0 <- list(p1=runif(1,0.1,0.9), alpha=runif(1, 2, 20))
     
-    EM_simdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=TRUE)  # 16sec pro run
+    EM_simdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=FALSE)  # 16sec pro run
     opt_simdata <- run_optim(dat, parallel=FALSE, theta_0=theta_0)  # 10sec pro run
 
     ## results[iter, "optim_p1"] <- invlogit(opt_simdata$par[1])
@@ -150,19 +153,33 @@ results <- Reduce(rbind, fig4_res)
 rownames(results) <- NULL
 results <- as.data.frame(results)
 
-saveRDS(results, file="data/fig4_results_20percentremoved.rds")
-results <- readRDS("data/fig4_results_20percentremoved.rds")
-
-relative_difference_p1 <- (results$optim_p1 - results$EM_p1) / (results$optim_p1)
-relative_difference_alpha <- (results$optim_alpha - results$EM_alpha) / (results$optim_alpha)
+saveRDS(results, file="data/fig4_results.rds")
+results <- readRDS("data/fig4_results.rds")
 
 pdf(paste0("data/convergence_comparison", ifelse(remove_20_percent, "_imputed", ""), ".pdf"))
 
 layout(matrix(1:4, byrow=TRUE, nrow=2))
-plot(results$optim_p1, results$optim_alpha, xlim=c(0,1), ylim=c(1,10), main="(a) Optim convergence")
-plot(results$EM_p1, results$EM_alpha, xlim=c(0,1), ylim=c(1,10), main="(b) EM convergence")
-boxplot(relative_difference_p1, main="(c) Relative difference of p1"); abline(h=0, lty=2)
-boxplot(relative_difference_alpha, main="(d) Relative difference of alpha"); abline(h=0, lty=2)
+
+plot(results$optim_p1, results$EM_p1, main="(a) p1 convergence", xlab="Nelder-Mead", ylab="EM Algorithm", bty="n")
+abline(h=0.2); abline(v=0.2)
+
+plot(results$optim_alpha, results$EM_alpha, main="(b) alpha convergence", xlab="Nelder-Mead", ylab="EM Algorithm", bty="n")
+abline(h=4); abline(v=4)
+
+sdr <- 2* sd(results$optim_p1 - results$EM_p1)
+plot((results$optim_p1 + results$EM_p1)/2, results$optim_p1 - results$EM_p1, main="(c) Bland-Altman plot of p1",
+     xlab="Average", ylab="Difference", ylim=c(-1.25*sdr, 1.25*sdr))
+abline(h=0)
+abline(h=sdr , lty=2)
+abline(h=-sdr, lty=2)
+
+sdr <- 2* sd(results$optim_alpha - results$EM_alpha)
+plot((results$optim_alpha + results$EM_alpha)/2, results$optim_alpha - results$EM_alpha, main="(d) Bland-Altman plot of alpha",
+     xlab="Average", ylab="Difference", ylim=c(-1.25*sdr, 1.25*sdr))
+abline(h=0)
+abline(h=sdr , lty=2)
+abline(h=-sdr, lty=2)
+
 dev.off()
 
 ################################################################
@@ -170,13 +187,14 @@ dev.off()
 ################################################################
 #### Generate paper Figure 5: Runtime comparison of EM/optim by increasing N and D
 
-Ns <- seq(10, 100, by=10)
+Ns <- seq(10, 100, by=10)  # old
+Ns <- c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250)  # new
 
-Ds <- c(5, 9, 15, 17, 19)  # WARNING: This is manually set to be the same as the simulated families below.
+Ds <- c(5, 9, 15, 17, 19, 21)  # WARNING: This is manually set to be the same as the simulated families below.
 ## Simulate max-size families once. Then just subset for smaller N
 
 all_raw_dat <- list()
-set.seed(20161121)
+set.seed(20161122)
 all_raw_dat[["D5"]] <- simulate_dataset(n_familys=max(Ns), n_generations=2, p1, alpha, pH, n_lastgen=3)
 all_raw_dat[["D9"]] <- simulate_dataset(n_familys=max(Ns), n_generations=3, p1, alpha, pH, n_lastgen=3)
 all_raw_dat[["D15"]] <- simulate_dataset(n_familys=max(Ns), n_generations=4, p1, alpha, pH, n_lastgen=1)
@@ -200,6 +218,15 @@ raw_dat[new_founders, "father_pos"] <- NA
 raw_dat[new_founders, "mother_pos"] <- NA
 raw_dat[new_founders, "founder"] <- TRUE
 all_raw_dat[["D19"]] <- raw_dat
+
+kill_founders <- 1:10
+raw_dat <- raw_dat_5gen
+raw_dat <- raw_dat[-which(raw_dat$pos %in% kill_founders), ]
+new_founders <- raw_dat$father_pos %in% kill_founders
+raw_dat[new_founders, "father_pos"] <- NA
+raw_dat[new_founders, "mother_pos"] <- NA
+raw_dat[new_founders, "founder"] <- TRUE
+all_raw_dat[["D21"]] <- raw_dat
 
 all_dat <- lapply(all_raw_dat, preprocess, impute=TRUE, pH=0.5, compute_PZL=TRUE)
 
@@ -227,15 +254,24 @@ for(D in Ds){
         results[EM_idx, "t"]  <- attr(this_EM,  "elapsed")[3]
         results[opt_idx, "t"] <- attr(this_opt, "elapsed")[3]
     }
-    
+    saveRDS(results, file=paste0("data/runtime_comparison_results_D", D, ".rds"))
 }
 
 saveRDS(results, file="data/runtime_comparison_results.rds")
 results <- readRDS(file="data/runtime_comparison_results.rds")
+results$D <- as.factor(results$D)
 
-ggplot(results, aes(x=N, y=t, group=D, colour=factor(D))) + geom_line() + geom_point() + facet_grid(~algo) + scale_y_log10()
+legendtitle <- guide_legend("Family size (D)")
 
-ggsave("data/runtime_comparison_results.pdf")
+results$algo <- factor(ifelse(results$algo=="optim", "Nelder-Mead", "EM"), levels=c("Nelder-Mead", "EM"))
+ggplot(results, aes(x=N, y=t, group=D, colour=D)) + geom_line() + geom_point() + facet_grid(~algo) + scale_y_log10() + labs(x="Number of families (N)", y="Runtime (s)")
+
+## black/white compatible:
+ggplot(results, aes(x=N, y=t, group=D, linetype=D, shape=D, colour=D)) + geom_line() + geom_point() + facet_grid(~algo) + scale_y_log10() + labs(x="Number of families (N)", y="Runtime (s)") + guides(colour=legendtitle, shape=legendtitle, linetype=legendtitle)
+
+ggsave("data/runtime_comparison_results.pdf", width=8, height=4)
+
+
 
 ################################################################
 ################################################################
@@ -354,17 +390,17 @@ saveRDS(contours, file="data/contours.rds")
 
 contours <- readRDS("data/contours.rds")
 
-pdf("data/contours.pdf")
-layout(matrix(1:4, byrow=T, nrow=2))
+pdf("data/contours.pdf", width=10, height=5)
+layout(matrix(1:2, byrow=T, nrow=1))
 par(oma=c(0,0,0,0), mar=c(4,4,2,1))
-idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z1), 512))))))  # hack to show nicely spaced contour lines
-contour(x=p1s, y=alphas, z=contours$z1, levels=rev(pretty(range(contours$z1), 512))[idx], main="(a) 100 families of 3 generations", xlab="p1", ylab="alpha")
-idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z2), 512))))))
-contour(x=p1s, y=alphas, z=contours$z2, levels=rev(pretty(range(contours$z2), 1024))[idx], main="(b) 1000 families of 3 generations", xlab="p1", ylab="alpha")
+## idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z1), 512))))))  # hack to show nicely spaced contour lines
+## contour(x=p1s, y=alphas, z=contours$z1, levels=rev(pretty(range(contours$z1), 512))[idx], main="(a) 100 families of 3 generations", xlab="p1", ylab="alpha")
+## idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z2), 512))))))
+## contour(x=p1s, y=alphas, z=contours$z2, levels=rev(pretty(range(contours$z2), 1024))[idx], main="(b) 1000 families of 3 generations", xlab="p1", ylab="alpha")
 idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z3), 512))))))
-contour(x=p1s, y=alphas, z=contours$z3, levels=rev(pretty(range(contours$z3), 512))[idx], main="(c) 100 families of 4 generations", xlab="p1", ylab="alpha")
+contour(x=p1s, y=alphas, z=contours$z3, levels=rev(pretty(range(contours$z3), 512))[idx], main="(a) 100 families of 4 generations", xlab="p1", ylab="alpha")
 idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z4), 512))))))
-contour(x=p1s, y=alphas, z=contours$z4, levels=rev(pretty(range(contours$z4), 512))[idx], main="(d) real data", xlab="p1", ylab="alpha")
+contour(x=p1s, y=alphas, z=contours$z4, levels=rev(pretty(range(contours$z4), 512))[idx], main="(b) real data", xlab="p1", ylab="alpha")
 dev.off()
 
 ################################################################
@@ -379,12 +415,13 @@ dev.off()
 ####  and plot ROC curves for simulated data
 
 ## used N=1000, p1=0.2, alpha=4, seed=20160921, n_generations=3, n_lastgen=3
+dat <- preprocess(simulate_dataset(n_familys=1000, n_generations=3, p1=0.2, alpha=4, pH=0.5, n_lastgen=1, seed=20160921), compute_PZL=TRUE)
 
 ## compute: 1 - P(Z_I = 0 | X_I)
 ## only founders is enough. nonfounders come deterministically
 
-## opt <- run_optim(dat, parallel=FALSE)
-## saveRDS(opt, file="data/opt_simdata.rds")
+opt <- run_optim(dat, parallel=FALSE)
+saveRDS(opt, file="data/opt_simdata.rds")
 opt <- readRDS("data/opt_simdata.rds")
 
 theta_hat <- list(p1=invlogit(opt$par[1]), alpha=opt$par[2])

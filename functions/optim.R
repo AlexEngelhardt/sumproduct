@@ -66,6 +66,9 @@ L_fam <- function(fam, riskconstellations, p1, alpha, gridpurging=TRUE){  # un-l
     if(gridpurging==FALSE){
         riskconstellations <- expand.grid(lapply(fam$position, function(i) 0:1))
     }
+    if(gridpurging==TRUE && is.na(attr(dat, "possible_Z_vectors_list")[[1]])){
+        stop("Grid purging is active but the data has no attribute 'possible_Z_vectors_list'. Please run preprocess() again with compute_PZL=TRUE. ")
+    }
         
     all_f_XI.ZI <- f_XI.ZI(fam, Z_vectors=riskconstellations, p1, alpha)
 
