@@ -27,7 +27,7 @@ NumericVector rowProdsC(NumericMatrix x) {
 }
 ')
 
-f_XI.ZI <- function(fam, Z_vectors, p1, alpha){
+f_XI.ZI <- function(fam, Z_vectors, p1, alpha, memoize=TRUE){
     ## f(X_I, Z_I | theta)
     ## Helper for L_fam() and E(). Computes for all Z possibilities: f(X_I, Z_I | theta),
     ##  then returns the vector of these f's.
@@ -49,7 +49,12 @@ f_XI.ZI <- function(fam, Z_vectors, p1, alpha){
         }
         Z_probs[,row] <- thisp1^Z_vectors[,row] * (1-thisp1)^(1-Z_vectors[,row])  # geht evtl schneller wenn du 2 Werte precomputest und extractest
         ##
-        f_densities[,row] <- fX_Id_givenZ[matrix(c(rep(row, nrow(f_densities)), Z_vectors[,row]+1), ncol=2)]
+
+        if(memoize==TRUE){
+            f_densities[,row] <- fX_Id_givenZ[matrix(c(rep(row, nrow(f_densities)), Z_vectors[,row]+1), ncol=2)]
+        } else {
+            f_densities[,row] <- f(fam$t[row], Z_vectors[,row], fam$c[row], fam$m[row], alpha, indexpatient=as.numeric(fam$position[row]==1), censor_age=fam$censored_at[row])
+        }
     }
 
     f_XI.ZI <- rowProdsC(as.matrix(Z_probs)) * rowProdsC(as.matrix(f_densities))
@@ -60,7 +65,7 @@ f_XI.ZI <- function(fam, Z_vectors, p1, alpha){
 ################################################################
 #### Grid search / optim full likelihood functions
 
-L_fam <- function(fam, riskconstellations, p1, alpha, gridpurging=TRUE){  # un-logged L for one family
+L_fam <- function(fam, riskconstellations, p1, alpha, gridpurging=TRUE, memoize=TRUE){  # un-logged L for one family
     stopifnot(diff(range(fam$FamID))==0)  # Throws an error if you supply more than one family. If so, then subset dat before.
 
     if(gridpurging==FALSE){
@@ -70,13 +75,13 @@ L_fam <- function(fam, riskconstellations, p1, alpha, gridpurging=TRUE){  # un-l
         stop("Grid purging is active but the data has no attribute 'possible_Z_vectors_list'. Please run preprocess() again with compute_PZL=TRUE. ")
     }
         
-    all_f_XI.ZI <- f_XI.ZI(fam, Z_vectors=riskconstellations, p1, alpha)
+    all_f_XI.ZI <- f_XI.ZI(fam, Z_vectors=riskconstellations, p1, alpha, memoize=memoize)
 
 
     return(sum(all_f_XI.ZI))
 }
 
-l <- function(dat, p1, alpha, parallel=FALSE, gridpurging=TRUE){  # logged l over all families
+l <- function(dat, p1, alpha, parallel=FALSE, gridpurging=TRUE, memoize=TRUE){  # logged l over all families
     FamIDs <- unique(dat$FamID)
 
     if(!parallel){
@@ -86,7 +91,7 @@ l <- function(dat, p1, alpha, parallel=FALSE, gridpurging=TRUE){  # logged l ove
     }
 
     likes <- my.apply(FamIDs, function(fam){
-        L_fam(dat[dat$FamID==fam,], attr(dat, "possible_Z_vectors_list")[[as.character(fam)]], p1, alpha, gridpurging=gridpurging)
+        L_fam(dat[dat$FamID==fam,], attr(dat, "possible_Z_vectors_list")[[as.character(fam)]], p1, alpha, gridpurging=gridpurging, memoize=memoize)
     }) %>% unlist()
     loglikes <- log(likes)
     loglike <- sum(loglikes)

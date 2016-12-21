@@ -24,7 +24,7 @@ E <- function(dat, theta_t){
             colnames(Z_vectors) <- paste0("Z", fam$position)
         }
 
-        Z_vectors$zaehler <- f_XI.ZI(fam, Z_vectors, p1_t, alpha_t)
+        Z_vectors$zaehler <- f_XI.ZI(fam, Z_vectors, p1_t, alpha_t)  # with gridpurging and memoization
 
         nenner <- sum(Z_vectors$zaehler)
         Z_vectors$T <- Z_vectors$zaehler / nenner  # T = PZgivenX, but a whole Z_I vector for a family. We want T1, the marginalized prob:
@@ -57,7 +57,7 @@ expected_loglik <- function(theta_t, theta_tplus1){
     return(NA)
 }
 
-run_EM <- function(dat, convergence_reltol=NA, EM_iterations=NA, theta_0=list(p1=0.2, alpha=4), verbose=TRUE, log_every=25, SPA=TRUE){
+run_EM <- function(dat, convergence_reltol=NA, EM_iterations=NA, theta_0=list(p1=0.2, alpha=4), verbose=TRUE, log_every=25, SPA=TRUE, SPA_cutoff=1){
 
     if(is.na(convergence_reltol) && is.na(EM_iterations)){
         stop("You must set one of the arguments convergence_reltol or EM_iterations to define a stopping criterion!")
@@ -83,7 +83,7 @@ run_EM <- function(dat, convergence_reltol=NA, EM_iterations=NA, theta_0=list(p1
                 if(verbose && !(i%%log_every)) print(paste(date(), ":: Iteration", i))
 
                 if(SPA == TRUE){
-                    T1 <- E_SPA(dat, theta_t)
+                    T1 <- E_SPA(dat, theta_t, SPA_cutoff)
                 } else {
                     T1 <- E(dat, theta_t)
                 }
@@ -475,9 +475,9 @@ E_SPA_onefam <- function(fam, theta_t){
     return(T1)
 }
 
-E_SPA <- function(dat, theta_t){  # We run the E step either as a SPA or with a marginalization, depending on the family size (SPA_cutoff)
+E_SPA <- function(dat, theta_t, SPA_cutoff=1){  # We run the E step either as a SPA or with a marginalization, depending on the family size (SPA_cutoff)
     
-    SPA_cutoff <- 1  # The minimum family size at which we use the SPA instead of a marginalization
+    # SPA_cutoff == The minimum family size at which we use the SPA instead of a marginalization
     
     T1 <- rep(NA, nrow(dat))
     for(FamID in unique(dat$FamID)){

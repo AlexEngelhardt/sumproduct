@@ -39,12 +39,12 @@ attr(EM_largefam, "elapsed") / attr(opt_largefam, "elapsed")  # 0.1608
 
 dat <- readRDS("data/01_dat_imputedparents.rds")  # real data
 
-EM_realdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=10, SPA=TRUE)
+EM_realdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE)
 attr(EM_realdata, "elapsed")   # 6855sec @ rel.tol 5e-04 (but SPA for all (i.e. also <10members) familys)
 opt_realdata <- run_optim(dat, parallel=FALSE)
 attr(opt_realdata, "elapsed")  # 505sec
 
-attr(EM_realdata, "elapsed") / attr(opt_realdata, "elapsed")  # 
+attr(EM_realdata, "elapsed") / attr(opt_realdata, "elapsed")  # 1.64 falls SPA unter 17 Leute marginalisiert
 
 ## Estimated aprameters:
 invlogit(opt_realdata$par[1])  # 0.9006657
