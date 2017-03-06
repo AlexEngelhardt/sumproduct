@@ -97,7 +97,7 @@ PZL <- function(dat, pH=1){
         }
     } else {
         for(fam in unique(dat$FamID)){  # if it's real data (i.e. familys have different structures)
-            print(fam)
+            ## print(fam)
             possible_Z_vectors_list[[as.character(fam)]] <- possible_Z_vectors(dat, fam, pH)
         }
     }
@@ -155,27 +155,40 @@ preprocess <- function(raw_dat, impute=TRUE, pH=0.5, compute_PZL=FALSE){
         weird_families_without_singles <- weird_families[nonsingle_idx]
 
         for(weird_FamID in weird_families_without_singles){
+
             fam <- dat[dat$FamID==weird_FamID, ]
 
             ## If there is only one generation, everyone is sibling and we impute noninformative parents:
             if(length(unique(fam$generation)) == 1){
                 imputed_parents <- data.frame(FamID=weird_FamID, generation=fam$generation[1]-1,
-                                              position=max(fam$position)+(1:2), father_pos=NA, mother_pos=NA, founder=TRUE, m=c(1,0), censored_at=Inf, c=0, t=0)
+                                              position=max(fam$position)+(1:2), father_pos=NA, mother_pos=NA, founder=TRUE, m=c(1,0), risk=NA, censored_at=Inf, c=0, t=0)
                 dat[dat$FamID==weird_FamID, "father_pos"] <- max(fam$position)+1
                 dat[dat$FamID==weird_FamID, "mother_pos"] <- max(fam$position)+2
                 dat[(dat$FamID==weird_FamID) & (dat$generation==min(fam$generation)), "founder"] <- FALSE
+
+                if(is.null(dat$risk)){  # if you preproc real data set, remove the 'risk' column again
+                    imputed_parents$risk <- NULL
+                    imputed_parents$censored_at <- NULL
+                }
+                
                 dat <- rbind(dat, imputed_parents)
                 next
             }
-
+                
             ## If in the oldest generation, no one has a child together, they are all siblings, and we impute noninformative parents:
             fam_2ndgen <- fam[fam$generation==min(fam$generation)+1,]
             if(all(is.na(fam_2ndgen$father_pos) | is.na(fam_2ndgen$mother_pos))){  # TRUE if no one in the first generation has a child together
                 imputed_parents <- data.frame(FamID=weird_FamID, generation=min(fam$generation)-1,
-                                              position=max(fam$position)+(1:2), father_pos=NA, mother_pos=NA, founder=TRUE, m=c(1,0), censored_at=Inf, c=0, t=0)
+                                              position=max(fam$position)+(1:2), father_pos=NA, mother_pos=NA, founder=TRUE, m=c(1,0), risk=NA, censored_at=Inf, c=0, t=0)
                 dat[(dat$FamID==weird_FamID) & (dat$generation==min(fam$generation)), "father_pos"] <- max(fam$position)+1
                 dat[(dat$FamID==weird_FamID) & (dat$generation==min(fam$generation)), "mother_pos"] <- max(fam$position)+2
                 dat[(dat$FamID==weird_FamID) & (dat$generation==min(fam$generation)), "founder"] <- FALSE
+
+                if(is.null(dat$risk)){  # if you preproc real data set, remove the 'risk' column again
+                    imputed_parents$risk <- NULL
+                    imputed_parents$censored_at <- NULL
+                }
+
                 dat <- rbind(dat, imputed_parents)
             }
 
@@ -202,7 +215,12 @@ preprocess <- function(raw_dat, impute=TRUE, pH=0.5, compute_PZL=FALSE){
 
                 impute_row <- data.frame(FamID=FamID, generation=halbwaisen_gen-1, position=impute_pos,
                                          father_pos=NA, mother_pos=NA,
-                                         founder=TRUE, m=impute_geschlecht, censored_at=Inf, c=0, t=0)  # impute: c=0, t=0
+                                         founder=TRUE, m=impute_geschlecht, risk=NA, censored_at=Inf, c=0, t=0)  # impute: c=0, t=0
+
+                if(is.null(dat$risk)){  # if you preproc real data set, remove the 'risk' column again
+                    impute_row$risk <- NULL
+                    impute_row$censored_at <- NULL
+                }
 
                 dat <- rbind(dat, impute_row)
 

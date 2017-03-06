@@ -116,6 +116,30 @@ saveRDS(results, file="data/diss/runtime_comparison_results.rds")
 results <- readRDS(file="data/diss/runtime_comparison_results.rds")
 results$D <- as.factor(results$D)
 
+## <add D=31> (Paper Revision)
+D <- 31
+
+results <- rbind(results, expand.grid(algo=c("optim","EM"), D=as.character(31), N=Ns, t=NA))
+dat_5gen <- preprocess(raw_dat_5gen, impute=TRUE, pH=0.5, compute_PZL=FALSE)
+
+print(paste0("* ", format(Sys.time()), ":: Starting D=", D))
+cat(paste0("* ", format(Sys.time()), ":: Starting D=", D, "\n"), file="log.txt", append=TRUE)
+for(N in Ns){  # WARNING: Do not mclapply this because it falsifies the elapsed time from system.time
+    
+    print(paste0("** ", format(Sys.time()), ":: Starting N=", N))
+    cat(paste0("** ", format(Sys.time()), ":: Starting N=", N, "\n"), file="log.txt", append=TRUE)
+
+    FamIDs <- unique(dat_5gen$FamID)
+    dat <- subset(dat_5gen, FamID %in% FamIDs[1:N])
+    
+    this_EM <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=TRUE)
+    EM_idx  <- which(results$algo=="EM" & results$D==D & results$N==N)
+    results[EM_idx, "t"]  <- attr(this_EM,  "elapsed")[3]
+}
+
+saveRDS(results, file=paste0("data/diss/runtime_comparison_results_D", D, ".rds"))
+
+
 ## Table
 
 xtab <- spread(results, key=algo, value=t) %>% transmute(D=D, N=N, fact=optim/EM) %>% spread(key=D, value=fact)
@@ -135,7 +159,7 @@ ggsave("data/diss/runtime_comparison_results.pdf", width=8, height=4)
 
 #### Equivalence of EM and Nelder-Mead
 
-options(mc.cores=3)
+options(mc.cores=10)
 
 iterations <- 100
 remove_20_percent <- FALSE  # you could loop over this \in {TRUE,FALSE}
@@ -158,8 +182,8 @@ fig4_res <- mclapply(1:iterations, function(iter){
 
     theta_0 <- list(p1=runif(1,0.1,0.9), alpha=runif(1, 2, 20))
     
-    EM_simdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=FALSE)  # 16sec pro run
-    opt_simdata <- run_optim(dat, parallel=FALSE, theta_0=theta_0)  # 10sec pro run
+    EM_simdata  <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=FALSE)
+    opt_simdata <- run_optim(dat, parallel=FALSE, theta_0=theta_0)
 
     c(optim_p1=invlogit(opt_simdata$par[1]),
       optim_alpha=opt_simdata$par[2],
@@ -315,18 +339,35 @@ raw_dat <- load_family_study()
 dat <-  preprocess(raw_dat, impute=TRUE, pH=pH, compute_PZL=TRUE)
 
 #### Parameter estimates
-
-EM_realdata_17  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE, SPA_cutoff=17)
-
 #### Runtime comparison
 
-opt_realdata <- run_optim(dat, parallel=FALSE)
 EM_realdata_1  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE, SPA_cutoff=1)
+EM_realdata_18  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE, SPA_cutoff=18)
+
+EM_realdata_20  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE, SPA_cutoff=20)
+opt_realdata <- run_optim(dat, parallel=FALSE)
+
+
+EM_realdata_16  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE, SPA_cutoff=16)
+EM_realdata_21  <- run_EM(dat, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE, SPA_cutoff=21)
+save(EM_realdata_1, EM_realdata_16, EM_realdata_18, EM_realdata_20, EM_realdata_21, opt_realdata, file="data/diss/runtime_realdata.RData")
 
 attr(EM_realdata_1, "elapsed")
-attr(EM_realdata_17, "elapsed")
+attr(EM_realdata_16, "elapsed")
+attr(EM_realdata_18, "elapsed")
+attr(EM_realdata_20, "elapsed")
+attr(EM_realdata_21, "elapsed")
 attr(opt_realdata, "elapsed")
 
+#### EM is slower. Try on largest family only:
+
+largest_family <- as.numeric(names(sort(table(dat$FamID), decreasing=TRUE)[1]))
+fam <- dat[dat$FamID==largest_family,]
+
+opt_fam <- run_optim(fam, parallel=FALSE)
+EM_fam  <- run_EM(fam, convergence_reltol=EM_rel.tol, log_every=50, SPA=TRUE)
+attr(EM_fam, "elapsed") # 41.99sec
+attr(opt_fam, "elapsed") # 172.347sec
 
 ################################################################
 #### 3.5.3 Multiple starts of the EM algorithm are not necessary
@@ -378,3 +419,39 @@ contour(x=p1s, y=alphas, z=contours$z3, levels=rev(pretty(range(contours$z3), 51
 idx <- c(1,2,3, 2^(2:floor(log2(length(pretty(range(contours$z4), 512))))))
 contour(x=p1s, y=alphas, z=contours$z4, levels=rev(pretty(range(contours$z4), 512))[idx], main="(b) real data", xlab="p1", ylab="alpha")
 dev.off()
+
+
+################################################################
+#### Bootstrapping for parameter estimation stability
+
+## use real data!
+
+B <- 100
+
+dat_B <- bootstrap_families(dat, B=B, seed=20160624)
+
+## saveRDS(dat_B, file=paste0("data/bootstrap_families_", B, ".rds"))  # 1GB and takes long
+
+results <- mclapply(dat_B, function(dat_b){
+    print(paste(format(Sys.time()), ":: Starting bootstrap analysis", attr(dat_b,"b"), "of", B))
+
+    ## opt_res <- run_optim(dat_b)  # or NA if disregarding optim
+    opt_res <- NA
+    em_res  <- run_EM(dat_b, 100)
+
+    return(list(optim=opt_res, EM=em_res))
+})
+
+saveRDS(results, file=paste0("data/diss/bootstrap_results_", B, ".rds"))
+
+res <- t(sapply(results, function(x) sapply(x$EM[1:2], tail, 1)))
+plotrix::std.error(res[,"p1"])
+plotrix::std.error(res[,"alpha"])
+
+## Plot bootstrap results
+
+## par(mfrow=c(1,2))
+results <- readRDS(paste0("data/diss/bootstrap_results_", B, ".rds"))
+## plot(t(sapply(results, function(r) r$optim$par)), main="optim")
+plot(t(sapply(results, function(x) sapply(x$EM[1:2], tail, 1))), main="EM")
+

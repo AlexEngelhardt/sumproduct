@@ -75,33 +75,36 @@ fams[567,]  # ok so linearify this summation in here. 13 kids!
 ################################################################
 #### Bootstrapping for parameter estimation stability
 
-B <- 3
+## use real data!
+
+B <- 100
 
 dat_B <- bootstrap_families(dat, B=B, seed=20160624)
 
-saveRDS(dat_B, file=paste0("data/results/bootstrap_families_", B, ".rds"))
+## saveRDS(dat_B, file=paste0("data/bootstrap_families_", B, ".rds"))  # 1GB and takes long
 
 results <- mclapply(dat_B, function(dat_b){
     print(paste(format(Sys.time()), ":: Starting bootstrap analysis", attr(dat_b,"b"), "of", B))
 
-    opt_res <- run_optim(dat_b)  # or NA if disregarding optim 
+    ## opt_res <- run_optim(dat_b)  # or NA if disregarding optim
+    opt_res <- NA
     em_res  <- run_EM(dat_b, 100)
 
     return(list(optim=opt_res, EM=em_res))
 })
 
-saveRDS(results, file=paste0("data/results/bootstrap_results_", B, ".rds"))
+saveRDS(results, file=paste0("data/bootstrap_results_", B, ".rds"))
+
+res <- t(sapply(results, function(x) sapply(x$EM[1:2], tail, 1)))
+plotrix::std.error(res[,"p1"])
+plotrix::std.error(res[,"alpha"])
 
 ## Plot bootstrap results
 
-par(mfrow=c(2,2))
-results <- readRDS(paste0("data/results/bootstrap_results_", "imputed", ".rds"))
-plot(t(sapply(results, function(r) r$optim$par)), main="01, optim")
-plot(t(sapply(results, function(x) sapply(x$EM[1:2], tail, 1))), main="01, EM")
-
-results <- readRDS(paste0("data/results/bootstrap_results_", "censored80", ".rds"))
-plot(t(sapply(results, function(r) r$optim$par)), main="02, optim")
-plot(t(sapply(results, function(x) sapply(x$EM[1:2], tail, 1))), main="02, EM")
+## par(mfrow=c(1,2))
+results <- readRDS(paste0("data/bootstrap_results_", B, ".rds"))
+## plot(t(sapply(results, function(r) r$optim$par)), main="optim")
+plot(t(sapply(results, function(x) sapply(x$EM[1:2], tail, 1))), main="EM")
 
 
 ################################################################
@@ -260,6 +263,35 @@ for(D in Ds){
 saveRDS(results, file="data/runtime_comparison_results.rds")
 results <- readRDS(file="data/runtime_comparison_results.rds")
 results$D <- as.factor(results$D)
+
+## <add D=31> (Paper Revision)
+D <- 31
+
+results <- rbind(results, expand.grid(algo=c("optim","EM"), D=as.character(31), N=Ns, t=NA))
+dat_5gen <- preprocess(raw_dat_5gen, impute=TRUE, pH=0.5, compute_PZL=FALSE)
+
+print(paste0("* ", format(Sys.time()), ":: Starting D=", D))
+cat(paste0("* ", format(Sys.time()), ":: Starting D=", D, "\n"), file="log.txt", append=TRUE)
+for(N in Ns){  # WARNING: Do not mclapply this because it falsifies the elapsed time from system.time
+    
+    print(paste0("** ", format(Sys.time()), ":: Starting N=", N))
+    cat(paste0("** ", format(Sys.time()), ":: Starting N=", N, "\n"), file="log.txt", append=TRUE)
+
+    FamIDs <- unique(dat_5gen$FamID)
+    dat <- subset(dat_5gen, FamID %in% FamIDs[1:N])
+    
+    this_EM <- run_EM(dat, convergence_reltol=EM_rel.tol, theta_0=theta_0, log_every=100, SPA=TRUE)
+    EM_idx  <- which(results$algo=="EM" & results$D==D & results$N==N)
+    results[EM_idx, "t"]  <- attr(this_EM,  "elapsed")[3]
+}
+
+saveRDS(results, file=paste0("data/runtime_comparison_results_D", D, ".rds"))
+
+## here, I extrapolate the optim runtime for D=31:
+
+
+## </add D=31>
+
 
 legendtitle <- guide_legend("Family size (D)")
 
@@ -489,3 +521,20 @@ for(fam in unique(dat$FamID)){
          status=(dat[dat$FamID==fam, "t"]==0))
     dev.off()
 }
+
+
+################################################################
+#### Revision
+
+results <- readRDS(file="data/runtime_comparison_results.rds")
+data <- results %>% filter(algo=="optim", N==250, D>10)
+mod <- lm(log(t) ~ D, data=data)
+
+data <- rbind(data, c(NA, 23, NA, NA))
+data <- rbind(data, c(NA, 25, NA, NA))
+data <- rbind(data, c(NA, 27, NA, NA))
+data <- rbind(data, c(NA, 29, NA, NA))
+data <- rbind(data, c(NA, 31, NA, NA))
+
+## estimated runtime in years for Nelder-Mead on familys of size 31:
+exp(predict(mod, newdata=data))[9] / 60 / 60 / 24 / 365  # 2.7 years
